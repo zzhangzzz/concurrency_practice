@@ -113,3 +113,73 @@ class Account {
     }   
 }
 ```
+
+
+#2 Condition
+java 内置的管程synchronized只有一个条件变量，而Lock & Condition 支持多个变量，这是一个重要区别
+
+案例1 通过两个条件变量快速实现阻塞队列：  
+section2_util.LockAndCondition.BlockedQueue  
+
+需要注意，Lock 和 Condition 实现的管程，线程等待和通知需要调用 await()、signal()、signalAll()
+
+wait()、notify()、notifyAll() 只有在 synchronized 实现的管程里才能使用  
+
+再用dubbo 异步转同步的方式来看一下作用  
+首先是这里发送RPC请求，通过get() 等待RPC返回结果
+```java
+public class DubboInvoker{
+  Result doInvoke(Invocation inv){
+    // 下面这行就是源码中108行
+    // 为了便于展示，做了修改
+    return currentClient 
+      .request(inv, timeout)
+      .get();
+  }
+}
+```  
+下面是Dubbo中通知等待机制的实现
+```java
+    //  创建锁 & 条件变量
+    private final Lock lock = new ReentrantLock();
+    private final Condition done = lock.newCondition();
+
+    // 调用方法等待结果
+    Object get(int timeout) {
+        long start = System.nanoTime();
+        lock.lock();
+        try {
+            while (!isDone()) {
+                done.await(timeout);
+                long cur = System.nanoTime();
+                if (isDone() || cur - start > timeout) {
+                    break;
+                }   
+            }   
+        } finally {
+            lock.unlock();
+        }
+        if (!isDone()) {
+            throw new TimeoutException();
+        }               
+        return returnFromResponse();
+    }   
+
+    // Rpc结果是否返回
+    boolean isDone() {
+        return response != null;    
+    }
+
+    // RPC结果返回时调用此方法
+    private void doReceived(Response res) {
+        lock.lock();
+        try {
+            response = res;
+            if (done != null) {
+                done.signal();
+            }        
+        } finally {
+            lock.unlock();
+        }              
+    }
+```
