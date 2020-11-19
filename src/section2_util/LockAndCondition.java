@@ -20,24 +20,24 @@ public class LockAndCondition {
         //条件变量 队列不空
         final Condition notEmpty = lock.newCondition();
 
-        void enq(T x) {
+        void enq(T x) throws InterruptedException {
             lock.lock();
             try {
-                while (/* 队列已满 */) {
+                while (/* 队列已满 */ true) {
                     notFull.await();
                 }
 
                 // 入队操作
                 notEmpty.signal();
-            } final {
+            } finally {
                 lock.unlock();
             }
         }
 
-        void deq() {
+        void deq() throws InterruptedException {
             lock.lock();
             try {
-                while (/* 队列空 */) {
+                while (/* 队列空 */ false) {
                     notEmpty.await();
                 }
                 // 出对操作
